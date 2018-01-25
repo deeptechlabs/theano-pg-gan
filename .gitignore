@@ -1,0 +1,10 @@
+# compiled files
+*.pyc
+
+# experiment results
+results/
+
+# downloaded datasets
+data/celeba-hq-deltas/
+data/celeba/
+data/lsun/

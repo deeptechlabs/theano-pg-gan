@@ -8,7 +8,7 @@
 #----------------------------------------------------------------------------
 # Paths.
 
-data_dir = 'datasets'
+data_dir = 'data'
 result_dir = 'results'
 
 #----------------------------------------------------------------------------
@@ -98,115 +98,18 @@ loss = dict(                                # Loss function:
 #----------------------------------------------------------------------------
 # Configuration overrides for individual experiments.
 
-# Section 6.3: "High-resolution image generation using CelebA-HQ dataset"
-if 1:
-    run_desc = 'celeb-hq-1024x1024'
-    dataset = dict(h5_path='celeba-hq-1024x1024.h5', resolution=1024, max_labels=0, mirror_augment=True, max_images=30000)
+categories = ['bedroom']
+category_idx = 0
+name = categories[category_idx]
+if name == 'bedroom':
+    run_desc = 'lsun-%s-256x256' % name
+    h5_path = 'lsun/bedroom/lsun-%s-train-50k.h5' % name
+    mirror_augment = False
 
-# Section 6.4: "LSUN results"
-if 0:
-    categories = ['airplane', 'bedroom', 'bicycle', 'bird', 'boat', 'bottle', 'bridge', 'bus', 'car', 'cat',
-                  'chair', 'churchoutdoor', 'classroom', 'conferenceroom', 'cow', 'diningroom', 'diningtable', 'dog', 'horse', 'kitchen',
-                  'livingroom', 'motorbike', 'person', 'pottedplant', 'restaurant', 'sheep', 'sofa', 'tower', 'train', 'tvmonitor']
-    category_idx = 0
-    
-    name = categories[category_idx]
-    if name == 'bedroom' or name == 'dog':
-        run_desc = 'lsun-%s-256x256' % name
-        h5_path = 'lsun-%s-256x256-full.h5' % name
-        mirror_augment = False
-    else:
-        run_desc = 'lsun-%s-256x256-100k' % name
-        h5_path = 'lsun-%s-256x256-100k.h5' % name
-        mirror_augment = True
-        
-    dataset = dict(h5_path=h5_path, resolution=256, max_labels=0, mirror_augment=mirror_augment)
-    train.update(lod_training_kimg=800, lod_transition_kimg=800, total_kimg=20000, minibatch_overrides={})
-    G.update(fmap_base=4096)
-    D.update(fmap_base=4096)
-
-# Section 6.1: "Importance of individual contributions in terms of statistical similarity"
-if 0:
-    datasets = ['celeb128', 'bedroom128']
-    configs = ['gulrajani-et-al-2017', 'progressive-growing', 'small-minibatch', 'revised-training-parameters',
-               'minibatch-stddev', 'minibatch-discrimination', 'equalized-learning-rate', 'pixelwise-normalization']
-    dataset_idx = 0
-    config_idx = 0
-
-    run_desc = '%s-%s' % (datasets[dataset_idx], configs[config_idx])
-    h5_paths = {'celeb128': 'celeba-128x128.h5', 'bedroom128': 'lsun-bedroom-256x256-full.h5'}
-    mirror_augment = {'celeb128': True, 'bedroom128': False}
-    dataset = dict(h5_path=h5_paths[datasets[dataset_idx]], max_labels=0, resolution=128, mirror_augment=mirror_augment[datasets[dataset_idx]])
-
-    train.update(lod_training_kimg=800, lod_transition_kimg=800, rampup_kimg=0, total_kimg=10000, minibatch_overrides={})
-    G.update(fmap_base=2048)
-    D.update(fmap_base=2048)
-
-    if config_idx < 3: # gulrajani-et-al-2017 -- small-minibatch
-        train.update(D_training_repeats=5, adam_beta2=0.9, minibatch_default=64, G_smoothing=0.999**20)
-        G.update(latent_size=128, normalize_latents=False, use_leakyrelu=False, use_batchnorm=True, tanh_at_end=1.0)
-        D.update(use_layernorm=True)
-        loss.update(iwass_epsilon=0.0)
-
-    if config_idx == 0: # gulrajani-et-al-2017
-        train.update(lod_initial_resolution=128, lod_training_kimg=0, lod_transition_kimg=0)
-
-    if config_idx == 2: # small-minibatch
-        train.update(minibatch_default=16, G_smoothing=0.999**5)
-
-    if config_idx < 4 or config_idx == 5: # without minibatch-stddev
-        D.update(mbstat_avg=None)
-
-    if config_idx == 5: # minibatch-discrimination
-        D.update(mbdisc_kernels=100)
-
-    if config_idx < 6: # without equalized-learning-rate
-        train.update(G_learning_rate_max=0.0001, D_learning_rate_max=0.0001)
-        G.update(use_wscale=False)
-        D.update(use_wscale=False)
-
-    if config_idx < 7: # without pixelwise-normalization
-        G.update(use_pixelnorm=False)
-
-# Section 6.5: "CIFAR10 inception scores"
-if 0:
-    run_desc = 'cifar-10-32x32'
-    dataset = dict(h5_path='cifar-10-32x32.h5', resolution=32, max_labels=0, mirror_augment=False)
-    train.update(lod_training_kimg=400, lod_transition_kimg=400, rampup_kimg=0, minibatch_overrides={})
-    train.update(total_kimg=20000, separate_funcs=False)
-    G.update(fmap_base=4096, fmap_max=128, latent_size=128)
-    D.update(fmap_base=4096, fmap_max=128)
-    loss.update(iwass_target=750.0)
-
-# Appendix E: "MNIST-1K discrete mode test with crippled discriminator"
-if 0:
-    K=4
-    random_seed = 0
-
-    config_postfix = ''; ourNorm = False; useMBS = False; useProg = False
-    #config_postfix = '-ournorm'; ourNorm = True; useMBS = False; useProg = False
-    #config_postfix = '-mbstddev'; ourNorm = True; useMBS = True; useProg = False
-    #config_postfix = '-progression'; ourNorm = True; useMBS = True; useProg = True
-
-    run_desc = 'mnistrgb32-k%d-wgangp%s-seed%d' % (K, config_postfix, random_seed)
-    dataset = dict(h5_path='mnist-rgb-32x32.h5', resolution=32, max_labels=0, mirror_augment=False)
-    train.update(D_training_repeats=5, minibatch_default=64, minibatch_overrides={})
-    train.update(lod_initial_resolution=4, lod_training_kimg=500, lod_transition_kimg=2000, total_kimg=15000)
-    G = dict(func='G_mnist_mode_recovery', fmap_base=64, fmap_decay=1.0, fmap_max=256, progressive=True)
-    D = dict(func='D_mnist_mode_recovery', fmap_base=64, fmap_decay=1.0, fmap_max=256, progressive=True, X=K)
-    loss = dict(type='iwass', iwass_epsilon=0.0)
-
-    if not useProg:
-        train.update(lod_initial_resolution=32, lod_training_kimg=0, lod_transition_kimg=0, total_kimg=10000)
-        G.update(progressive=False)
-        D.update(progressive=False)
-
-    if useMBS:
-        D.update(mbstat_avg='all')
-
-    if ourNorm:
-        G.update(use_wscale=True, use_pixelnorm=True, use_batchnorm=False);
-        D.update(use_wscale=True, use_batchnorm=False);
+dataset = dict(h5_path=h5_path, resolution=256, max_labels=0, mirror_augment=mirror_augment)
+train.update(lod_training_kimg=800, lod_transition_kimg=800, total_kimg=20000, minibatch_overrides={})
+G.update(fmap_base=4096)
+D.update(fmap_base=4096)
 
 #----------------------------------------------------------------------------
 # Utilities for analyzing networks.
