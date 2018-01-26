@@ -12,13 +12,14 @@ import glob
 import pickle
 import argparse
 import threading
+import json
 import Queue
 import traceback
 import numpy as np
 import scipy.ndimage
 import PIL.Image
 import h5py # conda install h5py
-
+import torchfile
 #----------------------------------------------------------------------------
 
 class HDF5Exporter:
@@ -29,8 +30,11 @@ class HDF5Exporter:
         self.channels = channels
         self.h5_file = h5py.File(h5_filename, 'w')
         self.h5_lods = []
+        self.h5_lods_captions = []
+        self.h5_lods_embeddings = []
         self.buffers = []
         self.buffer_sizes = []
+
         for lod in xrange(rlog2, -1, -1):
             r = 2 ** lod; c = channels
             bytes_per_item = c * (r ** 2)
@@ -64,9 +68,15 @@ class HDF5Exporter:
                     self.flush_lod(lod)
                 ofs += num
 
+    #def add_captions(self, captions):
+    #    for lod in xrange(len(self.h5_lods)):
+    #        captions = 
+
+    #def add_embeddings(self, embeddings):
+
     def num_images(self):
         return self.h5_lods[0].shape[0] + self.buffer_sizes[0]
-        
+
     def flush_lod(self, lod):
         num = self.buffer_sizes[lod]
         if num > 0:
@@ -616,7 +626,7 @@ def create_celeba_hq(h5_filename, celeba_dir, delta_dir, num_threads=4, num_task
     print 'Added %d images.' % len(fields['idx'])
 
 #----------------------------------------------------------------------------
-
+"""
 def create_coco(h5_filename, data_dir, resolution=256):
     print 'Creating COCO 2014 dataset %s from %s' % (h5_filename, data_dir)
     h5 = HDF5Exporter(h5_filename, resolution, 3)
@@ -644,6 +654,56 @@ def create_coco(h5_filename, data_dir, resolution=256):
     num_added = h5.num_images()
     h5.close()
     print '%-40s\r' % '',
+    print 'Added %d images.' % num_added
+"""
+def create_coco(h5_filename, data_dir, resolution=256, export_labels=True):
+    print 'Creating COCO 2014 dataset with captions %s from %s' % (h5_filename, data_dir)
+    h5 = HDF5Exporter(h5_filename, resolution, 3)
+    import cPickle
+    import cv2
+    with open(os.path.join(data_dir, 'train/filenames.pickle'), 'rb') as f:
+        filenames = cPickle.load(f)
+
+    # parse validation captions data
+    val_captions_path = os.path.join(data_dir,'test/val_captions.t7')
+    t_file = torchfile.load(val_captions_path)
+    captions_list = t_file.raw_txt
+    embeddings = np.concatenate(t_file.fea_txt, axis=0)
+    #num_embeddings = len(captions_list)
+    total_images = len(filenames)
+    max_images = total_images * 5
+
+    for idx, prefix in enumerate(filenames):
+        filename = prefix + '.jpg'
+        print '%d / %d\r' % (h5.num_images(), min(h5.num_images() + total_images - idx, max_images)),
+        img = cv2.imread(os.path.join(data_dir, 'images', filename), 1)
+        img = img[:, :, ::-1] # BGR => RGB
+        crop = np.min(img.shape[:2])
+        img = img[(img.shape[0] - crop) / 2 : (img.shape[0] + crop) / 2, (img.shape[1] - crop) / 2 : (img.shape[1] + crop) / 2]
+        img = PIL.Image.fromarray(img, 'RGB')
+        img = img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
+        img = np.asarray(img)
+        img = img.transpose(2, 0, 1) # HWC => CHW
+        # adding 5 different versions of images
+        for i in range(0,4):
+            h5.add_images(img[np.newaxis])
+            h5.add_images(embeddings[idx+i])
+
+        if h5.num_images() == max_images:
+            break
+
+    print '%-40s\r' % 'Flushing data...',
+    num_added = h5.num_images()
+    h5.close()
+    print '%-40s\r' % '',
+    print 'Added %d images.' % num_added
+
+    if export_labels:
+        npy_filename = os.path.splitext(h5_filename)[0] + '-captions.npy'
+        print 'Creating %s' % npy_filename
+        onehot = np.zeros((captions_list.size, np.max(captions_list) + 1), dtype=np.float32)
+        onehot[np.arange(captions_list.size), captions_list] = 1.0
+        np.save(npy_filename, onehot)
     print 'Added %d images.' % num_added
 
 #----------------------------------------------------------------------------
