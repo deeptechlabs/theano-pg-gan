@@ -617,6 +617,37 @@ def create_celeba_hq(h5_filename, celeba_dir, delta_dir, num_threads=4, num_task
 
 #----------------------------------------------------------------------------
 
+def create_coco(h5_filename, data_dir, resolution=256):
+    print 'Creating COCO 2014 dataset %s from %s' % (h5_filename, data_dir)
+    h5 = HDF5Exporter(h5_filename, resolution, 3)
+    import cPickle
+    import cv2
+    with open(os.path.join(data_dir, 'train/filenames.pickle'), 'rb') as f:
+        filenames = cPickle.load(f)
+        total_images = len(filenames)
+        max_images = total_images
+        for idx, prefix in enumerate(filenames):
+            filename = prefix + '.jpg'
+            print '%d / %d\r' % (h5.num_images(), min(h5.num_images() + total_images - idx, max_images)),
+            img = cv2.imread(os.path.join(data_dir, 'images', filename), 1)
+            img = img[:, :, ::-1] # BGR => RGB
+            crop = np.min(img.shape[:2])
+            img = img[(img.shape[0] - crop) / 2 : (img.shape[0] + crop) / 2, (img.shape[1] - crop) / 2 : (img.shape[1] + crop) / 2]
+            img = PIL.Image.fromarray(img, 'RGB')
+            img = img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
+            img = np.asarray(img)
+            img = img.transpose(2, 0, 1) # HWC => CHW
+            h5.add_images(img[np.newaxis])
+            if h5.num_images() == max_images:
+                break
+    print '%-40s\r' % 'Flushing data...',
+    num_added = h5.num_images()
+    h5.close()
+    print '%-40s\r' % '',
+    print 'Added %d images.' % num_added
+
+#----------------------------------------------------------------------------
+
 def execute_cmdline(argv):
     prog = argv[0]
     parser = argparse.ArgumentParser(
@@ -698,6 +729,12 @@ def execute_cmdline(argv):
     p.add_argument(     'delta_dir',        help='Directory to read CelebA-HQ deltas from')
     p.add_argument(     '--num_threads',    help='Number of concurrent threads (default: 4)', type=int, default=4)
     p.add_argument(     '--num_tasks',      help='Number of concurrent processing tasks (default: 100)', type=int, default=100)
+
+    p = add_command(    'create_coco',      'Create HDF5 dataset for COCO training set.',
+                                            'create_coco coco-256x256.h5 ~/coco/ --resolution 256')
+    p.add_argument(     'h5_filename',      help='HDF5 file to create')
+    p.add_argument(     'data_dir',         help='Directory to read data from')
+    p.add_argument(     '--resolution',     help='Output resolution (default: 256)', type=int, default=256)
 
     args = parser.parse_args(argv[1:])
     func = globals()[args.command]
