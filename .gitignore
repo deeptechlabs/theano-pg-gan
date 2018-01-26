@@ -1,3 +1,6 @@
+# temp files
+*.swp
+
 # compiled files
 *.pyc
 
@@ -8,3 +11,5 @@ results/
 data/celeba-hq-deltas/
 data/celeba/
 data/lsun/
+data/coco/
+data/visdial/

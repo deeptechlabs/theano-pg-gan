@@ -98,6 +98,7 @@ loss = dict(                                # Loss function:
 #----------------------------------------------------------------------------
 # Configuration overrides for individual experiments.
 
+'''
 categories = ['bedroom']
 category_idx = 0
 name = categories[category_idx]
@@ -105,6 +106,10 @@ if name == 'bedroom':
     run_desc = 'lsun-%s-256x256' % name
     h5_path = 'lsun/bedroom/lsun-%s-train-50k.h5' % name
     mirror_augment = False
+'''
+run_desc = 'coco-256x256-im'
+h5_path = 'coco/coco-train-images-only.h5'
+mirror_augment = False
 
 dataset = dict(h5_path=h5_path, resolution=256, max_labels=0, mirror_augment=mirror_augment)
 train.update(lod_training_kimg=800, lod_transition_kimg=800, total_kimg=20000, minibatch_overrides={})
