@@ -65,6 +65,7 @@ G = dict(                                   # Generator architecture:
     fmap_decay              = 1.0,          # log2 of feature map reduction when doubling the resolution.
     fmap_max                = 512,          # Maximum number of feature maps on any resolution.
     latent_size             = 512,          # Dimensionality of the latent vector.
+    linear_cond_size        = 1024,         # Dimensionality of the linear conditioning vector.
     normalize_latents       = True,         # Normalize latent vector to lie on the unit hypersphere?
     use_wscale              = True,         # Use equalized learning rate?
     use_pixelnorm           = True,         # Use pixelwise normalization?
