@@ -658,38 +658,8 @@ def create_celeba_hq(h5_filename, celeba_dir, delta_dir, num_threads=4, num_task
     print 'Added %d images.' % len(fields['idx'])
 
 #----------------------------------------------------------------------------
-"""
-def create_coco(h5_filename, data_dir, resolution=256):
-    print 'Creating COCO 2014 dataset %s from %s' % (h5_filename, data_dir)
-    h5 = HDF5Exporter(h5_filename, resolution, 3)
-    import cPickle
-    import cv2
-    with open(os.path.join(data_dir, 'train/filenames.pickle'), 'rb') as f:
-        filenames = cPickle.load(f)
-        total_images = len(filenames)
-        max_images = total_images
-        for idx, prefix in enumerate(filenames):
-            filename = prefix + '.jpg'
-            print '%d / %d\r' % (h5.num_images(), min(h5.num_images() + total_images - idx, max_images)),
-            img = cv2.imread(os.path.join(data_dir, 'images', filename), 1)
-            img = img[:, :, ::-1] # BGR => RGB
-            crop = np.min(img.shape[:2])
-            img = img[(img.shape[0] - crop) / 2 : (img.shape[0] + crop) / 2, (img.shape[1] - crop) / 2 : (img.shape[1] + crop) / 2]
-            img = PIL.Image.fromarray(img, 'RGB')
-            img = img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
-            img = np.asarray(img)
-            img = img.transpose(2, 0, 1) # HWC => CHW
-            h5.add_images(img[np.newaxis])
-            if h5.num_images() == max_images:
-                break
-    print '%-40s\r' % 'Flushing data...',
-    num_added = h5.num_images()
-    h5.close()
-    print '%-40s\r' % '',
-    print 'Added %d images.' % num_added
-"""
 
-def create_coco(h5_filename, data_dir, resolution=256, export_labels=True):
+def create_coco(h5_filename, data_dir, resolution=256, export_captions=True):
     print 'Creating COCO 2014 dataset with captions %s from %s' % (h5_filename, data_dir)
     h5 = HDF5Exporter(h5_filename, resolution, 3)
     import cPickle
@@ -730,13 +700,16 @@ def create_coco(h5_filename, data_dir, resolution=256, export_labels=True):
     print '%-40s\r' % '',
     print 'Added %d images.' % num_added
 
-    if export_labels:
-        npy_filename = os.path.splitext(h5_filename)[0] + '-captions.npy'
+    if export_captions:
+        npy_filename = os.path.splitext(h5_filename)[0] + '-embeddings.npy'
+        #caption_filename = os.path.splitext(h5_filename)[0] + '-caption.npy'
         print 'Creating %s' % npy_filename
-        onehot = np.zeros((captions_list.size, np.max(captions_list) + 1), dtype=np.float32)
-        onehot[np.arange(captions_list.size), captions_list] = 1.0
-        np.save(npy_filename, onehot)
-    print 'Added %d images.' % num_added
+        #captions = np.zeros((captions_list.size, np.max(captions_list) + 1), dtype=np.float32)
+        #onehot[np.arange(captions_list.size), captions_list] = 1.0
+        np.save(npy_filename, embeddings)
+        #np.save(caption_filename, captions)
+    print 'Added caption and embeddings of %d images.' % num_added
+    
 
 #----------------------------------------------------------------------------
 
