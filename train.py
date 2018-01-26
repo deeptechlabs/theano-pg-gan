@@ -28,8 +28,8 @@ from theano import tensor as T
 import lasagne
 
 import network
-import dataset
-
+#import dataset
+import loader
 #----------------------------------------------------------------------------
 # Convenience.
 
@@ -56,15 +56,27 @@ def random_labels(num_labels, training_set):
 
 def load_dataset(dataset_spec=None, verbose=False, **spec_overrides):
     if verbose: print 'Loading dataset...'
-    if dataset_spec is None: dataset_spec = config.dataset
-    dataset_spec = dict(dataset_spec) # take a copy of the dict before modifying it
-    dataset_spec.update(spec_overrides)
-    dataset_spec['h5_path'] = os.path.join(config.data_dir, dataset_spec['h5_path'])
-    if 'label_path' in dataset_spec: dataset_spec['label_path'] = os.path.join(config.data_dir, dataset_spec['label_path'])
-    training_set = dataset.Dataset(**dataset_spec)
-    if verbose: print 'Dataset shape =', np.int32(training_set.shape).tolist()
+
+    print(dataset_spec)
+    # {'max_labels': 0,
+    # 'mirror_augment': False,
+    # 'resolution': 256,
+    # 'h5_path': 'lsun/bedroom/lsun-bedroom-train-50k.h5'}
+
+
+    # modifiction starts here
+    dataset = loader.Loader('mscoco')
+    training_set = dataset.trainiterator
+
+    if verbose:
+        print 'Dataset shape =', np.int32(training_set.shape).tolist()
     drange_orig = training_set.get_dynamic_range()
-    if verbose: print 'Dynamic range =', drange_orig
+    if verbose:
+        print 'Dynamic range =', drange_orig
+
+    # the load dataset function returns the training set
+    # and the dynamic range of the original
+
     return training_set, drange_orig
 
 def load_dataset_for_previous_run(result_subdir, **kwargs):
@@ -141,6 +153,8 @@ def train_gan(
             snapshot_fake_labels[x::W, x] = 1.0
             indices = np.arange(training_set.shape[0])[training_set.labels[:,x] != 0]
             for y in xrange(H):
+                # loads the real image from the training iterator loader
+
                 example_real_images[x + y * W] = training_set.h5_lods[0][np.random.choice(indices)]
     else:
         raise ValueError('Invalid image_grid_type', image_grid_type)
