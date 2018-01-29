@@ -128,7 +128,7 @@ def train_gan(
         if image_grid_size is None:
             w, h = G.output_shape[3], G.output_shape[2]
             image_grid_size = np.clip(1920 / w, 3, 16), np.clip(1080 / h, 2, 16)
-        example_real_images, snapshot_fake_labels = training_set.get_random_minibatch(np.prod(image_grid_size), labels=True)
+        example_real_images, snapshot_fake_labels, example_real_captions = training_set.get_random_minibatch(np.prod(image_grid_size), labels=True)
         snapshot_fake_latents = random_latents(np.prod(image_grid_size), G.input_shape)
         snapshot_fake_linear_cond = random_latents(np.prod(image_grid_size), (None, config.G['linear_cond_size']))
     elif image_grid_type == 'category':
@@ -256,14 +256,14 @@ def train_gan(
         # Invoke training funcs.
         if not separate_funcs:
             assert D_training_repeats == 1
-            mb_reals, mb_labels = training_set.get_random_minibatch(minibatch_size, lod=cur_lod, shrink_based_on_lod=True, labels=True)
             mb_train_out = GD_train_fn(mb_reals, mb_labels, random_latents(minibatch_size, G.input_shape), random_labels(minibatch_size, training_set))
+            mb_reals, mb_labels, mb_captions = training_set.get_random_minibatch(minibatch_size, lod=cur_lod, shrink_based_on_lod=True, labels=True)
             cur_nimg += minibatch_size
             tick_train_out.append(mb_train_out)
         else:
             for idx in xrange(D_training_repeats):
-                mb_reals, mb_labels = training_set.get_random_minibatch(minibatch_size, lod=cur_lod, shrink_based_on_lod=True, labels=True)
                 mb_train_out = D_train_fn(mb_reals, mb_labels, random_latents(minibatch_size, G.input_shape), random_labels(minibatch_size, training_set))
+                mb_reals, mb_labels, mb_captions = training_set.get_random_minibatch(minibatch_size, lod=cur_lod, shrink_based_on_lod=True, labels=True)
                 cur_nimg += minibatch_size
                 tick_train_out.append(mb_train_out)
             G_train_fn(random_latents(minibatch_size, G.input_shape), random_labels(minibatch_size, training_set))
@@ -483,7 +483,7 @@ def calc_inception_scores(run_id, log='inception.txt', num_images=50000, minibat
 
     # Load dataset.
     training_set, drange_orig = load_dataset_for_previous_run(result_subdir, shuffle=False)
-    reals, labels = training_set.get_random_minibatch(num_images, labels=True)
+    reals, labels, captions = training_set.get_random_minibatch(num_images, labels=True)
 
     # Evaluate reals.
     if eval_reals:
@@ -650,7 +650,7 @@ def calc_mnistrgb_histogram(run_id, num_images=25600, log='histogram.txt', minib
 
     # Load dataset.
     training_set, drange_orig = load_dataset_for_previous_run(result_subdir, shuffle=False)
-    reals, labels = training_set.get_random_minibatch(num_images * num_evals, labels=True)
+    reals, labels, captions = training_set.get_random_minibatch(num_images * num_evals, labels=True)
 
     # Evaluate reals.
     if eval_reals:
