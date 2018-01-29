@@ -92,7 +92,7 @@ loss = dict(                                # Loss function:
     iwass_lambda            = 10.0,         # \lambda
     iwass_epsilon           = 0.001,        # \epsilon_{drift}
     iwass_target            = 1.0,          # \alpha
-    cond_type               = 'acgan',      # AC-GAN
+    cond_type               = 'cgan',       # C-GAN custom conditioned gan
     cond_weight             = 1.0,          # Weight of the conditioning terms.
 )
 
