@@ -440,6 +440,7 @@ def G_paper(
     fmap_decay          = 1.0,
     fmap_max            = 256,
     latent_size         = None,
+    linear_cond_size    = None,
     normalize_latents   = True,
     use_wscale          = True,
     use_pixelnorm       = True,
@@ -458,8 +459,13 @@ def G_paper(
     if latent_size is None: latent_size = nf(0)
     (act, iact) = (lrelu, ilrelu) if use_leakyrelu else (relu, irelu)
 
-    input_layers = [InputLayer(name='Glatents', shape=[None, latent_size])]
-    net = input_layers[-1]
+    if linear_cond_size is None:
+        input_layers = [InputLayer(name='Glatents', shape=[None, latent_size])]
+	net = input_layers[-1]
+    else:
+        input_layers = [InputLayer(name='Glatents', shape=[None, latent_size]),
+                        InputLayer(name='Glinearcond', shape=[None, linear_cond_size])]
+	net = ConcatLayer(name='Glatentcond', incomings=[input_layers[-2], input_layers[-1]])
     if normalize_latents:
         net = PixelNormLayer(net, name='Glnorm')
     if label_size:

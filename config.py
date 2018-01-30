@@ -65,6 +65,7 @@ G = dict(                                   # Generator architecture:
     fmap_decay              = 1.0,          # log2 of feature map reduction when doubling the resolution.
     fmap_max                = 512,          # Maximum number of feature maps on any resolution.
     latent_size             = 512,          # Dimensionality of the latent vector.
+    linear_cond_size        = 1024,         # Dimensionality of the linear conditioning vector.
     normalize_latents       = True,         # Normalize latent vector to lie on the unit hypersphere?
     use_wscale              = True,         # Use equalized learning rate?
     use_pixelnorm           = True,         # Use pixelwise normalization?
@@ -91,7 +92,7 @@ loss = dict(                                # Loss function:
     iwass_lambda            = 10.0,         # \lambda
     iwass_epsilon           = 0.001,        # \epsilon_{drift}
     iwass_target            = 1.0,          # \alpha
-    cond_type               = 'acgan',      # AC-GAN
+    cond_type               = 'cgan',       # C-GAN custom conditioned gan
     cond_weight             = 1.0,          # Weight of the conditioning terms.
 )
 

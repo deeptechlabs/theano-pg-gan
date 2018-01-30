@@ -128,8 +128,9 @@ def train_gan(
         if image_grid_size is None:
             w, h = G.output_shape[3], G.output_shape[2]
             image_grid_size = np.clip(1920 / w, 3, 16), np.clip(1080 / h, 2, 16)
-        example_real_images, snapshot_fake_labels = training_set.get_random_minibatch(np.prod(image_grid_size), labels=True)
+        example_real_images, snapshot_fake_labels, example_real_captions = training_set.get_random_minibatch(np.prod(image_grid_size), labels=True)
         snapshot_fake_latents = random_latents(np.prod(image_grid_size), G.input_shape)
+        snapshot_fake_linear_cond = random_latents(np.prod(image_grid_size), (None, config.G['linear_cond_size']))
     elif image_grid_type == 'category':
         W = training_set.labels.shape[1]
         H = W if image_grid_size is None else image_grid_size[1]
@@ -148,12 +149,14 @@ def train_gan(
     # Theano input variables and compile generation func.
     print 'Setting up Theano...'
     real_images_var  = T.TensorType('float32', [False] * len(D.input_shape))            ('real_images_var')
+    real_linear_cond_var = T.TensorType('float32', [False] * len(training_set.linear_cond.shape))('real_linear_cond_var')
     real_labels_var  = T.TensorType('float32', [False] * len(training_set.labels.shape))('real_labels_var')
     fake_latents_var = T.TensorType('float32', [False] * len(G.input_shape))            ('fake_latents_var')
+    fake_linear_cond_var = T.TensorType('float32', [False] * len(training_set.linear_cond.shape))('fake_linear_cond_var')
     fake_labels_var  = T.TensorType('float32', [False] * len(training_set.labels.shape))('fake_labels_var')
     G_lrate = theano.shared(np.float32(0.0))
     D_lrate = theano.shared(np.float32(0.0))
-    gen_fn = theano.function([fake_latents_var, fake_labels_var], Gs.eval_nd(fake_latents_var, fake_labels_var, ignore_unused_inputs=True), on_unused_input='ignore')
+    gen_fn = theano.function([fake_latents_var, fake_linear_cond_var, fake_labels_var], Gs.eval_nd(fake_latents_var, fake_linear_cond_var, fake_labels_var, ignore_unused_inputs=True), on_unused_input='ignore')
 
     # Misc init.
     resolution_log2 = int(np.round(np.log2(G.output_shape[2])))
@@ -175,7 +178,7 @@ def train_gan(
         del init_reals
 
     # Save example images.
-    snapshot_fake_images = gen_fn(snapshot_fake_latents, snapshot_fake_labels)
+    snapshot_fake_images = gen_fn(snapshot_fake_latents, snapshot_fake_linear_cond, snapshot_fake_labels)
     result_subdir = misc.create_result_subdir(config.result_dir, config.run_desc)
     misc.save_image_grid(example_real_images, os.path.join(result_subdir, 'reals.png'), drange=drange_orig, grid_size=image_grid_size)
     misc.save_image_grid(snapshot_fake_images, os.path.join(result_subdir, 'fakes%06d.png' % 0), drange=drange_viz, grid_size=image_grid_size)
@@ -229,7 +232,7 @@ def train_gan(
                 real_images_expr = T.extra_ops.repeat(real_images_expr, 2**min_lod, axis=3)
 
             # Optimize loss.
-            G_loss, D_loss, real_scores_out, fake_scores_out = evaluate_loss(G, D, min_lod, max_lod, real_images_expr, real_labels_var, fake_latents_var, fake_labels_var, **config.loss)
+            G_loss, D_loss, real_scores_out, fake_scores_out = evaluate_loss(G, D, min_lod, max_lod, real_images_expr, real_labels_var, fake_latents_var, fake_linear_cond_var, fake_labels_var, **config.loss)  #SSS#
             G_updates = adam(G_loss, G.trainable_params(), learning_rate=G_lrate, beta1=adam_beta1, beta2=adam_beta2, epsilon=adam_epsilon).items()
             D_updates = adam(D_loss, D.trainable_params(), learning_rate=D_lrate, beta1=adam_beta1, beta2=adam_beta2, epsilon=adam_epsilon).items()
 
@@ -246,21 +249,21 @@ def train_gan(
                     [G_loss, D_loss, real_scores_out, fake_scores_out],
                     updates=D_updates, on_unused_input='ignore')
                 G_train_fn = theano.function(
-                    [fake_latents_var, fake_labels_var],
+                    [fake_latents_var, fake_linear_cond_var, fake_labels_var],
                     [],
                     updates=G_updates+Gs.updates, on_unused_input='ignore')
 
         # Invoke training funcs.
         if not separate_funcs:
             assert D_training_repeats == 1
-            mb_reals, mb_labels = training_set.get_random_minibatch(minibatch_size, lod=cur_lod, shrink_based_on_lod=True, labels=True)
             mb_train_out = GD_train_fn(mb_reals, mb_labels, random_latents(minibatch_size, G.input_shape), random_labels(minibatch_size, training_set))
+            mb_reals, mb_labels, mb_captions = training_set.get_random_minibatch(minibatch_size, lod=cur_lod, shrink_based_on_lod=True, labels=True)
             cur_nimg += minibatch_size
             tick_train_out.append(mb_train_out)
         else:
             for idx in xrange(D_training_repeats):
-                mb_reals, mb_labels = training_set.get_random_minibatch(minibatch_size, lod=cur_lod, shrink_based_on_lod=True, labels=True)
                 mb_train_out = D_train_fn(mb_reals, mb_labels, random_latents(minibatch_size, G.input_shape), random_labels(minibatch_size, training_set))
+                mb_reals, mb_labels, mb_captions = training_set.get_random_minibatch(minibatch_size, lod=cur_lod, shrink_based_on_lod=True, labels=True)
                 cur_nimg += minibatch_size
                 tick_train_out.append(mb_train_out)
             G_train_fn(random_latents(minibatch_size, G.input_shape), random_labels(minibatch_size, training_set))
@@ -306,7 +309,7 @@ def train_gan(
 
 def evaluate_loss(
     G, D, min_lod, max_lod, real_images_in,
-    real_labels_in, fake_latents_in, fake_labels_in,
+    real_labels_in, fake_latents_in, fake_linear_cond_in, fake_labels_in,
     type            = 'iwass',
     L2_fake_weight  = 0.1,
     iwass_lambda    = 10.0,
@@ -322,7 +325,7 @@ def evaluate_loss(
     rnd = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1, 2147462579))
 
     # Evaluate generator.
-    fake_images_out = G.eval_nd(fake_latents_in, fake_labels_in, min_lod=min_lod, max_lod=max_lod, ignore_unused_inputs=True)
+    fake_images_out = G.eval_nd(fake_latents_in, fake_linear_cond_in, fake_labels_in, min_lod=min_lod, max_lod=max_lod, ignore_unused_inputs=True)
 
     # Mix reals and fakes through linear crossfade.
     mixing_factors = rnd.uniform((real_images_in.shape[0], 1, 1, 1), dtype='float32')
@@ -480,7 +483,7 @@ def calc_inception_scores(run_id, log='inception.txt', num_images=50000, minibat
 
     # Load dataset.
     training_set, drange_orig = load_dataset_for_previous_run(result_subdir, shuffle=False)
-    reals, labels = training_set.get_random_minibatch(num_images, labels=True)
+    reals, labels, captions = training_set.get_random_minibatch(num_images, labels=True)
 
     # Evaluate reals.
     if eval_reals:
@@ -647,7 +650,7 @@ def calc_mnistrgb_histogram(run_id, num_images=25600, log='histogram.txt', minib
 
     # Load dataset.
     training_set, drange_orig = load_dataset_for_previous_run(result_subdir, shuffle=False)
-    reals, labels = training_set.get_random_minibatch(num_images * num_evals, labels=True)
+    reals, labels, captions = training_set.get_random_minibatch(num_images * num_evals, labels=True)
 
     # Evaluate reals.
     if eval_reals:
