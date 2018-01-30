@@ -12,25 +12,32 @@ import glob
 import pickle
 import argparse
 import threading
+import json
 import Queue
 import traceback
 import numpy as np
 import scipy.ndimage
 import PIL.Image
 import h5py # conda install h5py
-
+import torchfile
 #----------------------------------------------------------------------------
 
 class HDF5Exporter:
-    def __init__(self, h5_filename, resolution, channels=3):
+    def __init__(self, h5_filename,resolution, channels=3):
         rlog2 = int(np.floor(np.log2(resolution)))
+        print(resolution)
         assert resolution == 2 ** rlog2
         self.resolution = resolution
         self.channels = channels
         self.h5_file = h5py.File(h5_filename, 'w')
+        #self.h5_file2 = h5py.File(h5_filename2, 'w')
         self.h5_lods = []
+        self.h5_emb = []
         self.buffers = []
+        self.buffers_emb = []
         self.buffer_sizes = []
+        self.buffer_emb_sizes = []
+
         for lod in xrange(rlog2, -1, -1):
             r = 2 ** lod; c = channels
             bytes_per_item = c * (r ** 2)
@@ -38,13 +45,26 @@ class HDF5Exporter:
             buffer_size = int(np.ceil(512.0 * np.exp2(20) / bytes_per_item))
             lod = self.h5_file.create_dataset('data%dx%d' % (r,r), shape=(0,c,r,r), dtype=np.uint8,
                 maxshape=(None,c,r,r), chunks=(chunk_size,c,r,r), compression='gzip', compression_opts=4)
+
+            #emb = self.h5_file2.create_dataset('embedding%dx%d' % (1,1024), shape=(1,1024), dtype=np.float32,
+            #     compression='gzip', compression_opts=4)
+
             self.h5_lods.append(lod)
+            #self.h5_emb.append(emb)
+
             self.buffers.append(np.zeros((buffer_size,c,r,r), dtype=np.uint8))
+            #self.buffers_emb.append(np.zeros((1, 1024), dtype=np.float32))
+
             self.buffer_sizes.append(0)
+            #self.buffer_emb_sizes.append(0)
 
     def close(self):
         for lod in xrange(len(self.h5_lods)):
             self.flush_lod(lod)
+
+        for emb in xrange(len(self.h5_emb)):
+            self.flush_lod(emb)
+
         self.h5_file.close()
 
     def add_images(self, img):
@@ -64,15 +84,37 @@ class HDF5Exporter:
                     self.flush_lod(lod)
                 ofs += num
 
+    def add_embeddings(self, emb):
+        print(emb)
+        for emb in xrange(len(self.h5_emb)):
+            quant_emb = np.float32(np.clip(emb, -1, 1))
+            print(quant_emb)
+            ofs = 0
+            while ofs < quant_emb.shape[0]:
+                num = min(quant_emb.shape[0] - ofs, self.buffers_emb[emb].shape[0] - self.buffer_emb_sizes[emb])
+                self.buffers_emb[emb] = quant_emb
+                print(self.buggers_emb)
+                self.buffer_emb_sizes[emb] += num
+                print(self.buffers_sizes[emb])
+                if self.buffer_emb_sizes[emb] == self.buffers_emb[emb].shape[0]:
+                    self.flush_emb(emb)
+                ofs += num
+
     def num_images(self):
         return self.h5_lods[0].shape[0] + self.buffer_sizes[0]
-        
+
     def flush_lod(self, lod):
         num = self.buffer_sizes[lod]
         if num > 0:
             self.h5_lods[lod].resize(self.h5_lods[lod].shape[0] + num, axis=0)
             self.h5_lods[lod][-num:] = self.buffers[lod][:num]
             self.buffer_sizes[lod] = 0
+
+    def flush_emb(self, emb):
+        num = self.buffer_emb_sizes[emb]
+        if num > 0:
+            self.h5_lods_emb[emb][-num:] = self.buffers[emb][:num]
+            self.buffer_emb_sizes[emb] = 0
 
 #----------------------------------------------------------------------------
 
@@ -617,34 +659,57 @@ def create_celeba_hq(h5_filename, celeba_dir, delta_dir, num_threads=4, num_task
 
 #----------------------------------------------------------------------------
 
-def create_coco(h5_filename, data_dir, resolution=256):
-    print 'Creating COCO 2014 dataset %s from %s' % (h5_filename, data_dir)
+def create_coco(h5_filename, data_dir, resolution=256, export_captions=True):
+    print 'Creating COCO 2014 dataset with captions %s from %s' % (h5_filename, data_dir)
     h5 = HDF5Exporter(h5_filename, resolution, 3)
     import cPickle
     import cv2
     with open(os.path.join(data_dir, 'train/filenames.pickle'), 'rb') as f:
         filenames = cPickle.load(f)
-        total_images = len(filenames)
-        max_images = total_images
-        for idx, prefix in enumerate(filenames):
-            filename = prefix + '.jpg'
-            print '%d / %d\r' % (h5.num_images(), min(h5.num_images() + total_images - idx, max_images)),
-            img = cv2.imread(os.path.join(data_dir, 'images', filename), 1)
-            img = img[:, :, ::-1] # BGR => RGB
-            crop = np.min(img.shape[:2])
-            img = img[(img.shape[0] - crop) / 2 : (img.shape[0] + crop) / 2, (img.shape[1] - crop) / 2 : (img.shape[1] + crop) / 2]
-            img = PIL.Image.fromarray(img, 'RGB')
-            img = img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
-            img = np.asarray(img)
-            img = img.transpose(2, 0, 1) # HWC => CHW
-            h5.add_images(img[np.newaxis])
-            if h5.num_images() == max_images:
-                break
+
+    # parse validation captions data
+    val_captions_path = os.path.join(data_dir,'test/val_captions.t7')
+    t_file = torchfile.load(val_captions_path)
+    captions_list = t_file.raw_txt
+    embeddings = np.concatenate(t_file.fea_txt, axis=0)
+    #num_embeddings = len(captions_list)
+    total_images = len(filenames)
+    max_images = total_images 
+
+    for idx, prefix in enumerate(filenames):
+        filename = prefix + '.jpg'
+        print '%d / %d\r' % (h5.num_images(), min(h5.num_images() + total_images - idx, max_images)),
+        img = cv2.imread(os.path.join(data_dir, 'images', filename), 1)
+        img = img[:, :, ::-1] # BGR => RGB
+        crop = np.min(img.shape[:2])
+        img = img[(img.shape[0] - crop) / 2 : (img.shape[0] + crop) / 2, (img.shape[1] - crop) / 2 : (img.shape[1] + crop) / 2]
+        img = PIL.Image.fromarray(img, 'RGB')
+        img = img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
+        img = np.asarray(img)
+        img = img.transpose(2, 0, 1) # HWC => CHW
+        # adding 5 different versions of images
+        h5.add_images(img[np.newaxis])
+        #h5.add_embeddings(embeddings[idx])
+
+        if h5.num_images() == max_images:
+            break
+
     print '%-40s\r' % 'Flushing data...',
     num_added = h5.num_images()
     h5.close()
     print '%-40s\r' % '',
     print 'Added %d images.' % num_added
+
+    if export_captions:
+        npy_filename = os.path.splitext(h5_filename)[0] + '-embeddings.npy'
+        #caption_filename = os.path.splitext(h5_filename)[0] + '-caption.npy'
+        print 'Creating %s' % npy_filename
+        #captions = np.zeros((captions_list.size, np.max(captions_list) + 1), dtype=np.float32)
+        #onehot[np.arange(captions_list.size), captions_list] = 1.0
+        np.save(npy_filename, embeddings)
+        #np.save(caption_filename, captions)
+    print 'Added caption and embeddings of %d images.' % num_added
+    
 
 #----------------------------------------------------------------------------
 
